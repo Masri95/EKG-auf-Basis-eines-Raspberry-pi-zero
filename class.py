@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import time
 import signal
@@ -13,7 +10,7 @@ import sdl2
 import sdl2.sdlttf as sdlttf
 
 # -------------------------
-# SMBus import (smbus2 preferred)
+# SMBus import (smbus2)
 # -------------------------
 try:
     from smbus2 import SMBus
@@ -26,17 +23,17 @@ os.environ.setdefault("SDL_VIDEODRIVER", "KMSDRM")
 # Timing / Anzeige
 # =========================
 SAMPLE_DT   = 0.005   # 200 Hz target
-PLOT_DT     = 0.12  #رسم تقريبًا كل 120 ms → حوالي 8.3 FPS
+PLOT_DT     = 0.12  # Darstellung ca. alle 120 ms (~8.3 FPS)
 WINDOW_SEC  = 1.0
-FS = 1.0 / SAMPLE_DT #هو Sampling frequency (عدد العينات بالثانية)
+FS = 1.0 / SAMPLE_DT # Abtastfrequenz (Anzahl der Samples pro Sekunde)
 
-DISPLAY_MA_N = 7  #Moving Average للعرض فقط  7 عينات
+DISPLAY_MA_N = 7  # Moving Average nur für die Anzeige (7 Samples)
 STEP_DRAW = 8
 
 TEXT_ZONE_H = 110
 
-BUF_MAX = 12000  #أكبر عدد عينات مسموح نخزنها في buffer (deque) بين السامبلينغ والرسم.
-MAX_TAKE_PER_FRAME = 300 #منسحب من البافر حد أقصى 300 عينة لنعالجهم ونضيفهم للعرض
+BUF_MAX = 12000  ## Max. Anzahl gespeicherter Samples im Buffer (deque)
+MAX_TAKE_PER_FRAME = 300 ## Max. 300 Samples aus dem Puffer für Verarbeitung/Anzeige
 
 # =========================
 # ADS1115 SMBus settings
@@ -76,7 +73,7 @@ _a2 /= _a0
 
 
 # =========================
-# Global run flag (SIGINT)
+# Globales Lauf-Flag (SIGINT)
 # =========================
 running = True
 
@@ -91,10 +88,10 @@ signal.signal(signal.SIGINT, on_sigint)
 # 1) ADS1115 Reader (Hardware)
 # ============================================================
 class ADS1115Reader:
-    """
-    Configure ADS1115 once in continuous mode @ 860 SPS.
-    Then read only conversion register (fast).
-    """
+"""
+Konfiguriert den ADS1115 einmal im Continuous-Mode mit 860 SPS.
+Anschließend wird nur noch das Conversion-Register ausgelesen (schneller Zugriff).
+"""
     def __init__(self, bus_id=1, addr=0x48):
         self.bus = SMBus(bus_id)
         self.addr = addr
@@ -150,8 +147,7 @@ class ECGProcessor:
         self.SPKI = 0.0
         self.NPKI = 0.0
         self.last_peak_index = -999999
-        self.refractory = int(0.200 * FS) # ضربنا بـ FS
-لتحويل 0.200 ثانية إلى عدد عينات
+        self.refractory = int(0.200 * FS) # Multiplikation mit FS zur Umrechnung von 0,200 s in Anzahl der Samples
 
         self.peaks = []
         self.bpm_inst = 0.0
@@ -185,7 +181,7 @@ class ECGProcessor:
             self.n_y2, self.n_y1 = self.n_y1, y
             hp = y
 
-        # Low-pass (ON/OFF)
+        # Low-pass 
         if use_lowpass:
             lp_tau = 0.04
             alpha_lp = SAMPLE_DT / lp_tau
@@ -194,20 +190,20 @@ class ECGProcessor:
         else:
             filtered = hp
 
-        # Peak/BPM logic
+        # Peak/BPM logik
         energy = abs(filtered)
 
         if i < int(2 * FS):
-            self.SPKI = max(self.SPKI, energy)#Signal Peak Level
-            self.NPKI = (self.NPKI * i + energy) / (i + 1)#Noise Peak Level
+            self.SPKI = max(self.SPKI, energy)   #Signal Peak Nivau
+            self.NPKI = (self.NPKI * i + energy) / (i + 1) #Noise Peak Nivau
             return filtered, self.bpm_inst, self.bpm_smooth
 
-        THR1 = self.NPKI + 0.25 * (self.SPKI - self.NPKI)#adaptive thresholding
+        THR1 = self.NPKI + 0.25 * (self.SPKI - self.NPKI)  #adaptive thresholding
 
         if (energy >= THR1) and (i - self.last_peak_index >= self.refractory):
             self.last_peak_index = i
             self.peaks.append(i)
-            self.SPKI = 0.125 * energy + 0.875 * self.SPKI#Exponential Moving Average (EMA)
+            self.SPKI = 0.125 * energy + 0.875 * self.SPKI   #Exponential Moving Average (EMA)
 
             if len(self.peaks) >= 2:
                 rr = (self.peaks[-1] - self.peaks[-2]) / FS
@@ -227,7 +223,7 @@ class ECGApp:
     def __init__(self):
         self.paused = False
 
-        # filter toggles
+        # Filter-Schalter
         self.use_highpass = True
         self.use_notch = True
         self.use_lowpass = True
@@ -255,7 +251,7 @@ class ECGApp:
         self.ma_buf = deque(maxlen=DISPLAY_MA_N)
         self.ma_sum = 0.0
 
-        self.SCALE = 40  # adjust if needed
+        self.SCALE = 40 
 
         self.text_items = []
         self.last_text_t = 0.0
@@ -264,10 +260,10 @@ class ECGApp:
         self.sampler_thread = None
 
     # -------------------------
-    # SDL helpers
+    # SDL-Helfer
     # -------------------------
-    @staticmethod
-    #Pre-rendering static elements
+    @staticmethod      # unabhängig von der Klasseninstanz
+   # Vorab-Rendering statischer Elemente
     def _create_grid_texture(ren, W, H, step=40):
         grid_tex = sdl2.SDL_CreateTexture(
             ren, sdl2.SDL_PIXELFORMAT_RGBA8888, sdl2.SDL_TEXTUREACCESS_TARGET, W, H
@@ -328,7 +324,7 @@ class ECGApp:
         last_rate_t = time.perf_counter()
         count = 0
         
-        #Local binding optimization
+        # Optimierung durch lokale Variablenbindung
         buf_append = self.buf.append
         buf_popleft = self.buf.popleft
         perf = time.perf_counter
@@ -362,7 +358,8 @@ class ECGApp:
                 self.eff_rate_hz = count / dt if dt > 0 else 0.0
                 count = 0
                 last_rate_t = now
-#resynchronization
+                
+          #resynchronization
             slp = next_t - perf()
             if slp > 0:
                 sleepf(slp)
@@ -375,13 +372,15 @@ class ECGApp:
     def _init_hw(self):
         self.ads = ADS1115Reader(I2C_BUS, ADS_ADDR)
         _ = self.ads.read_voltage()
-        print("✅ ADS1115 (SMBus) verbunden.")
-
+        print(" ADS1115 (SMBus) verbunden.")
+        
+# Fehler bei der Initialisierung von SDL
     def _init_sdl(self):
         if sdl2.SDL_Init(sdl2.SDL_INIT_VIDEO) != 0:
             raise RuntimeError("SDL_Init failed: " + sdl2.SDL_GetError().decode())
         sdlttf.TTF_Init()
-
+        
+# Fehler beim Erstellen des Fensters
         self.window = sdl2.SDL_CreateWindow(
             b"ECG ADS1115 (SMBus + HP/Notch/LP)",
             sdl2.SDL_WINDOWPOS_CENTERED, sdl2.SDL_WINDOWPOS_CENTERED,
@@ -423,7 +422,7 @@ class ECGApp:
                 if key == sdl2.SDLK_p:
                     self.paused = not self.paused
 
-                # filter toggles
+               # Filter-Schalter
                 if key == sdl2.SDLK_h:
                     self.use_highpass = not self.use_highpass
                 if key == sdl2.SDLK_n:
@@ -432,7 +431,7 @@ class ECGApp:
                     self.use_lowpass = not self.use_lowpass
 
     def _update_text(self, now):
-        # update every 0.5s (TTF expensive)
+       # Aktualisierung alle 500 ms (TTF-Font-Rendering teuer)
         if now - self.last_text_t < 0.5:
             return
         self.last_text_t = now
@@ -449,15 +448,15 @@ class ECGApp:
         y0 = self.H - 90
         dy = 18
 
-        # Line 1: time + bpm + eff rate (one line)
+        # Line 1: time + bpm + eff rate 
         line1 = f"t={t_show:6.2f}s   BPM={bpm_show:5.1f}   EffRate={self.eff_rate_hz:5.1f} Hz"
         t1, r1 = self._make_text_texture(self.ren, self.font, line1, x_text, y0, (255, 255, 255))
 
-        # Line 2: filter states (one line, aligned with line1)
+        # Line 2: Filter states
         line2 = (
             f"HP(H):{'ON' if self.use_highpass else 'OFF'}   "
             f"Notch(N):{'ON' if self.use_notch else 'OFF'}   "
-            f"LP(L):{'ON' if self.use_lowpass else 'OFF'}"
+            f"LP(L):{'ON' if self.use_lowpass else 'OFF'}    "
         )
         t2, r2 = self._make_text_texture(self.ren, self.font, line2, x_text, y0 + dy, (180, 180, 180))
 
@@ -468,14 +467,14 @@ class ECGApp:
             self.text_items.append((tp, rp))
 
     def _draw_frame(self, now):
-        # background
+        # Hintergrunddarstellung
         if self.grid_tex:
             sdl2.SDL_RenderCopy(self.ren, self.grid_tex, None, None)
         else:
             sdl2.SDL_SetRenderDrawColor(self.ren, 0, 0, 40, 255)
             sdl2.SDL_RenderClear(self.ren)
 
-        # waveform
+        # Signalverlauf
         sdl2.SDL_SetRenderDrawColor(self.ren, 0, 255, 0, 255)
         n = len(self.ecg_disp)
         step = max(1, STEP_DRAW)
@@ -506,14 +505,14 @@ class ECGApp:
         try:
             self._init_hw()
         except Exception as e:
-            print("❌ ADS1115 SMBus init/read failed:", repr(e))
-            print("   Tipp: I2C aktiv? Adresse korrekt? i2cdetect -y 1")
+            print("ADS1115 SMBus-Initialisierung/Lesen fehlgeschlagen: ", repr(e))
+            print("Hinweis: Ist I2C aktiviert und die Adresse korrekt? ")
             return
 
         try:
             self._init_sdl()
         except Exception as e:
-            print("❌ SDL init failed:", repr(e))
+            print("Fehler bei der Initialisierung von SDL: ", repr(e))
             try:
                 if self.ads:
                     self.ads.close()
@@ -548,7 +547,7 @@ class ECGApp:
                             self.use_lowpass
                         )
 
-                        # display smoothing (moving average)
+                       # Glättung der Anzeige mittels gleitendem Mittelwert (Moving Average)
                         if len(self.ma_buf) == self.ma_buf.maxlen:
                             self.ma_sum -= self.ma_buf[0]
                         self.ma_buf.append(filt)
@@ -601,3 +600,4 @@ class ECGApp:
 
 if __name__ == "__main__":
     ECGApp().run()
+
